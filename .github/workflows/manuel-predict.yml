@@ -1,0 +1,40 @@
+name: Run Prediction
+
+on:
+  workflow_dispatch:
+    inputs:
+      output_name:
+        description: 'Name of the CSV file to create (without extension)'
+        required: false
+        default: 'predictions'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r soccer_predictions/requirements.txt
+
+      - name: Run prediction script
+        run: |
+          OUTPUT_NAME="${{ github.event.inputs.output_name }}"
+          if [ -z "$OUTPUT_NAME" ]; then
+            OUTPUT_NAME="predictions"
+          fi
+          python soccer_predictions/predict.py --output "$OUTPUT_NAME.csv"
+
+      - name: Upload predictions CSV
+        uses: actions/upload-artifact@v3
+        with:
+          name: predictions
+          path: "*.csv"
