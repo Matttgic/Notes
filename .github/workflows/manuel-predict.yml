@@ -11,6 +11,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -37,4 +40,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: predictions
-          path: "*.csv" 
+          path: "*.csv"
