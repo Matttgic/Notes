@@ -1,0 +1,11 @@
+Category,Rule_Name,Condition,Prediction,Success_Rate,Sample_Size,Confidence,Tested_In_Backtest,ROI_Percent,Edge_Percent,Avg_Odds,Profitability
+Basic,home_strong_advantage,RatingDiff > 0.25,Victoire domicile,0.7941176470588235,34,Élevée,Yes,2.91176470588235,6.1990170745300555,1.3658823529411763,Profitable
+Basic,away_strong_advantage,RatingDiff < -0.25,Victoire visiteur,0.8,25,Élevée,Yes,31.4,20.134099616858236,1.6703999999999999,Profitable
+Basic,elite_home_team,HomeRating > 6.95,Victoire domicile,0.8,40,Élevée,Yes,17.075000000000003,13.322220370061677,1.49975,Profitable
+Basic,balanced_match,abs(RatingDiff) < 0.05,Match nul,0.3714285714285714,70,Modérée,Yes,28.78571428571429,8.716461203770848,3.517857142857143,Profitable
+Basic,high_scoring,CombinedRating > 13.7,Plus de 2.5 buts,0.573170731707317,82,Modérée,Yes,-6.109756097560975,-2.4409795912563426,1.6734146341463414,Non Profitable
+Basic,low_scoring,CombinedRating < 13.4,Moins de 2.5 buts,0.4482758620689655,29,Modérée,Yes,-18.17241379310345,-7.947664020582968,1.8948275862068968,Non Profitable
+Advanced,strong_home_combo,HomeRating > 6.85 AND RatingDiff > 0.15,Victoire domicile,0.7796610169491526,59,Élevée,Yes,11.1864406779661,10.981542203543782,1.4928813559322036,Profitable
+Advanced,two_strong_teams,HomeRating > 6.85 AND AwayRating > 6.85,Plus de 2.5 buts,0.4090909090909091,22,Modérée,Yes,-26.81818181818182,-16.69761241638696,1.7359090909090908,Non Profitable
+Advanced,weak_vs_strong,HomeRating < 6.7 AND AwayRating > 6.9,Victoire visiteur,0.7857142857142857,14,Élevée,Yes,53.0,28.35622053699528,1.9914285714285713,Profitable
+Advanced,defensive_match,HomeRating < 6.8 AND AwayRating < 6.8,Moins de 2.5 buts,0.5324675324675324,77,Faible,Yes,-4.623376623376623,-0.3781509944891903,1.8648051948051945,Non Profitable
