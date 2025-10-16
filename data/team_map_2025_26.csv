@@ -1,0 +1,60 @@
+league_key,tournament_id,season_id,team_name_fd,team_name_ss,team_id_ss
+premier-league,17,76986,Manchester City,Manchester City,17
+premier-league,17,76986,Arsenal,Arsenal,42
+premier-league,17,76986,Liverpool,Liverpool,44
+premier-league,17,76986,Manchester United,Manchester United,35
+premier-league,17,76986,Chelsea,Chelsea,38
+premier-league,17,76986,Tottenham Hotspur,Tottenham Hotspur,36
+premier-league,17,76986,Newcastle United,Newcastle United,39
+premier-league,17,76986,Aston Villa,Aston Villa,40
+premier-league,17,76986,West Ham United,West Ham United,37
+premier-league,17,76986,Nottingham Forest,Nottingham Forest,14
+# --- ajoute les autres clubs de PL 25/26 sur la même logique ---
+
+ligue-1,34,77356,Paris Saint-Germain,Paris Saint-Germain,1644
+ligue-1,34,77356,Olympique de Marseille,Olympique de Marseille,1641
+ligue-1,34,77356,AS Monaco,AS Monaco,1642
+ligue-1,34,77356,Olympique Lyonnais,Olympique Lyonnais,1640
+ligue-1,34,77356,Lille,Lille,1650
+ligue-1,34,77356,RC Lens,RC Lens,1639
+ligue-1,34,77356,Stade Rennais,Stade Rennais,1651
+ligue-1,34,77356,OGC Nice,OGC Nice,1653
+ligue-1,34,77356,FC Nantes,FC Nantes,1648
+ligue-1,34,77356,Montpellier,Montpellier,1652
+# --- ajoute les autres clubs de L1 25/26 sur la même logique ---
+
+bundesliga,35,77333,Bayern München,Bayern München,2672
+bundesliga,35,77333,Borussia Dortmund,Borussia Dortmund,2673
+bundesliga,35,77333,RB Leipzig,RB Leipzig,2817
+bundesliga,35,77333,Bayer Leverkusen,Bayer 04 Leverkusen,2677
+bundesliga,35,77333,VfB Stuttgart,VfB Stuttgart,2675
+bundesliga,35,77333,Eintracht Frankfurt,Eintracht Frankfurt,2679
+bundesliga,35,77333,SC Freiburg,SC Freiburg,2682
+bundesliga,35,77333,TSG Hoffenheim,TSG 1899 Hoffenheim,2822
+bundesliga,35,77333,Werder Bremen,SV Werder Bremen,2678
+bundesliga,35,77333,VfL Wolfsburg,VfL Wolfsburg,2681
+# --- ajoute les autres clubs de Buli 25/26 sur la même logique ---
+
+la-liga,8,77559,Real Madrid,Real Madrid,2829
+la-liga,8,77559,FC Barcelona,Barcelona,2817
+la-liga,8,77559,Atlético de Madrid,Atlético Madrid,2836
+la-liga,8,77559,Athletic Club,Athletic Club,2832
+la-liga,8,77559,Real Sociedad,Real Sociedad,2831
+la-liga,8,77559,Real Betis,Real Betis,2837
+la-liga,8,77559,Sevilla,Sevilla,2819
+la-liga,8,77559,Villarreal,Villarreal,2824
+la-liga,8,77559,Valencia,Valencia,2826
+la-liga,8,77559,Celta Vigo,Celta de Vigo,2828
+# --- ajoute les autres clubs de Liga 25/26 sur la même logique ---
+
+serie-a,23,76457,Inter,Inter,2692
+serie-a,23,76457,AC Milan,Milan,2694
+serie-a,23,76457,Juventus,Juventus,2691
+serie-a,23,76457,Napoli,Napoli,2703
+serie-a,23,76457,AS Roma,Roma,2701
+serie-a,23,76457,Lazio,Lazio,2698
+serie-a,23,76457,Atalanta,Atalanta,2689
+serie-a,23,76457,Fiorentina,Fiorentina,2702
+serie-a,23,76457,Bologna,Bologna,2700
+serie-a,23,76457,Udinese,Udinese,2697
+# --- ajoute les autres clubs de Serie A 25/26 sur la même logique ---
