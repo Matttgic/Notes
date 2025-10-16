@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-predict.py (mapping statique)
+predict.py (saison 2025-2026, mapping statique)
 - Fixtures: football-data.org (secret FOOTBALL_DATA_TOKEN)
 - Ratings: SofaScore /team/{id}/unique-tournament/{uid}/season/{sid}/statistics/overall
-- Mapping nom->team_id SofaScore: fichier local sofa_team_map.csv (pas d'appel /teams)
-- Règles ROI depuis complete_predictive_rules_summary.csv
+- Mapping nom -> team_id SofaScore: fichier local (par défaut data/team_map_2025_26.csv)
+- Règles ROI: complete_predictive_rules_summary.csv
 - Sortie: CSV avec date, league, home, away, prediction, rule, ROI, success_rate
 """
 
@@ -15,12 +15,12 @@ import datetime as dt
 import os
 import sys
 import time
-import unicodedata
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 import requests
 
+# ------------ HTTP session ------------
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (GitHub Actions; +https://github.com)",
     "Accept": "application/json",
@@ -29,7 +29,7 @@ SESSION = requests.Session()
 SESSION.headers.update(HEADERS)
 TIMEOUT = 25
 
-# football-data -> SofaScore
+# ------------ Ligues (football-data -> SofaScore) ------------
 LEAGUES = {
     "PL":  {"uid": 17, "season_id": 76986, "name": "Premier League"},
     "FL1": {"uid": 34, "season_id": 77356, "name": "Ligue 1"},
@@ -39,6 +39,7 @@ LEAGUES = {
 }
 FD_COMP_LIST = ",".join(LEAGUES.keys())
 
+# ------------ Priorités des règles (doit correspondre au CSV) ------------
 RULE_PRIORITY = [
     "weak_vs_strong",
     "away_strong_advantage",
@@ -48,12 +49,15 @@ RULE_PRIORITY = [
     "home_strong_advantage",
 ]
 
+# ------------ Dates ------------
 def next_weekend_dates(today_utc: dt.date) -> List[dt.date]:
+    """Vendredi -> Lundi inclus"""
     dow = today_utc.weekday()  # Mon=0..Sun=6
     days_until_friday = (4 - dow) % 7
     fri = today_utc + dt.timedelta(days=days_until_friday)
-    return [fri + dt.timedelta(days=i) for i in range(4)]  # Fri..Mon
+    return [fri + dt.timedelta(days=i) for i in range(4)]
 
+# ------------ football-data.org (fixtures) ------------
 def fd_get_matches(api_token: str, date_from: dt.date, date_to: dt.date) -> List[dict]:
     url = (
         "https://api.football-data.org/v4/matches"
@@ -71,15 +75,13 @@ def collect_fixtures(api_token: str, dates: List[dt.date]) -> List[dict]:
     fixtures = []
     for m in matches:
         try:
-            comp = m["competition"]["code"]  # PL/FL1/BL1/SA/PD
+            comp = m["competition"]["code"]
             if comp not in LEAGUES:
                 continue
             status = m.get("status")
             if status not in ("SCHEDULED", "TIMED", "POSTPONED"):
                 continue
             utc_date = m["utcDate"][:10]
-            home = m["homeTeam"]["name"]
-            away = m["awayTeam"]["name"]
             fixtures.append(
                 {
                     "date": utc_date,
@@ -87,14 +89,15 @@ def collect_fixtures(api_token: str, dates: List[dt.date]) -> List[dict]:
                     "league": LEAGUES[comp]["name"],
                     "uid": LEAGUES[comp]["uid"],
                     "season_id": LEAGUES[comp]["season_id"],
-                    "home_name_fd": home,
-                    "away_name_fd": away,
+                    "home_name_fd": m["homeTeam"]["name"],
+                    "away_name_fd": m["awayTeam"]["name"],
                 }
             )
         except Exception:
             continue
     return fixtures
 
+# ------------ Règles ------------
 def load_rules(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
     df = df[df["Rule_Name"].isin(RULE_PRIORITY)].copy()
@@ -130,7 +133,7 @@ def apply_rules(home_rating: Optional[float], away_rating: Optional[float], rule
                 return rule, "Home Win"
     return None
 
-# ---------- SofaScore ratings ----------
+# ------------ SofaScore (ratings équipe) ------------
 def sofascore_avg_rating(team_id: int, uid: int, season_id: int) -> Optional[float]:
     url = f"https://www.sofascore.com/api/v1/team/{team_id}/unique-tournament/{uid}/season/{season_id}/statistics/overall"
     r = SESSION.get(url, timeout=TIMEOUT)
@@ -138,17 +141,17 @@ def sofascore_avg_rating(team_id: int, uid: int, season_id: int) -> Optional[flo
     js = r.json()
     return js.get("statistics", {}).get("avgRating")
 
-# ---------- Mapping loader ----------
-def load_sofa_team_map(path: str) -> pd.DataFrame:
+# ------------ Mapping nom -> team_id (CSV local) ------------
+def load_team_map(path: str) -> pd.DataFrame:
     """
-    Charge sofa_team_map.csv avec colonnes:
-    league,season_id,team_name_fd,team_name_ss,team_id_ss
+    Colonnes attendues:
+      league,season_id,team_name_fd,team_name_ss,team_id_ss
     """
     if not os.path.exists(path):
-        print(f"[WARN] Mapping {path} introuvable. Aucun match ne sera mappé.", file=sys.stderr)
+        print(f"[WARN] Mapping introuvable: {path}. Aucun match ne sera mappé.", file=sys.stderr)
         return pd.DataFrame(columns=["league","season_id","team_name_fd","team_name_ss","team_id_ss"])
     df = pd.read_csv(path, dtype={"team_id_ss": str})
-    # nettoie/trims
+    # Nettoyage
     for c in ("league","team_name_fd","team_name_ss"):
         if c in df.columns:
             df[c] = df[c].astype(str).str.strip()
@@ -158,16 +161,16 @@ def load_sofa_team_map(path: str) -> pd.DataFrame:
         df["team_id_ss"] = df["team_id_ss"].str.extract(r"(\d+)")[0]
     return df
 
-def get_team_id_from_map(map_df: pd.DataFrame, league: str, season_id: int, team_name_fd: str) -> Optional[int]:
+def get_team_id(map_df: pd.DataFrame, league: str, season_id: int, team_name_fd: str) -> Optional[int]:
     if map_df.empty:
         return None
     try:
-        candidates = map_df[(map_df["league"]==league) & (map_df["season_id"]==season_id)]
-        # essai match direct sur team_name_fd
-        row = candidates[candidates["team_name_fd"].str.casefold()==team_name_fd.casefold()].head(1)
+        pool = map_df[(map_df["league"] == league) & (map_df["season_id"] == season_id)]
+        # priorité: team_name_fd
+        row = pool[pool["team_name_fd"].str.casefold() == str(team_name_fd).casefold()].head(1)
         if row.empty:
-            # essai sur team_name_ss (au cas où on a mis le nom SofaScore à la place)
-            row = candidates[candidates["team_name_ss"].str.casefold()==team_name_fd.casefold()].head(1)
+            # fallback: au cas où le nom FD = nom SS dans le CSV saisi
+            row = pool[pool["team_name_ss"].str.casefold() == str(team_name_fd).casefold()].head(1)
         if row.empty:
             return None
         tid = row.iloc[0]["team_id_ss"]
@@ -175,10 +178,13 @@ def get_team_id_from_map(map_df: pd.DataFrame, league: str, season_id: int, team
     except Exception:
         return None
 
+# ------------ Main ------------
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--output", default="predictions.csv")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", default="predictions.csv", help="Nom du fichier CSV de sortie")
+    parser.add_argument("--map", default=os.path.join("data", "team_map_2025_26.csv"),
+                        help="Chemin du fichier mapping nom->team_id SofaScore")
+    args = parser.parse_args()
 
     # Règles
     rules_path = os.path.join(os.getcwd(), "complete_predictive_rules_summary.csv")
@@ -191,13 +197,13 @@ def main():
     fd_token = os.getenv("FOOTBALL_DATA_TOKEN", "").strip()
     if not fd_token:
         print("[ERR] FOOTBALL_DATA_TOKEN manquant (secret repo).", file=sys.stderr)
-        pd.DataFrame([], columns=[
-            "date","league","home_team","away_team","prediction","method_rule",
-            "rule_roi_percent","rule_success_rate","home_rating","away_rating","rating_diff"
-        ]).to_csv(args.output, index=False)
+        # Sortie vide mais structurée
+        empty_cols = ["date","league","home_team","away_team","prediction","method_rule",
+                      "rule_roi_percent","rule_success_rate","home_rating","away_rating","rating_diff"]
+        pd.DataFrame([], columns=empty_cols).to_csv(args.output, index=False)
         return
 
-    # Dates
+    # Fenêtre de dates: prochain week-end en UTC
     today_utc = dt.datetime.utcnow().date()
     dates = next_weekend_dates(today_utc)
     print("Fenêtre (UTC):", ", ".join(d.isoformat() for d in dates))
@@ -206,44 +212,46 @@ def main():
     fixtures = collect_fixtures(fd_token, dates)
     print(f"Fixtures trouvés: {len(fixtures)}")
     if not fixtures:
-        pd.DataFrame([], columns=[
-            "date","league","home_team","away_team","prediction","method_rule",
-            "rule_roi_percent","rule_success_rate","home_rating","away_rating","rating_diff"
-        ]).to_csv(args.output, index=False)
+        empty_cols = ["date","league","home_team","away_team","prediction","method_rule",
+                      "rule_roi_percent","rule_success_rate","home_rating","away_rating","rating_diff"]
+        pd.DataFrame([], columns=empty_cols).to_csv(args.output, index=False)
         print("Aucun match à traiter.")
         return
 
-    # Mapping statique
-    map_path = os.path.join(os.getcwd(), "sofa_team_map.csv")
-    map_df = load_sofa_team_map(map_path)
+    # Mapping local
+    map_path = os.path.abspath(args.map)
+    print(f"Mapping: {map_path}")
+    map_df = load_team_map(map_path)
 
     rating_cache: Dict[Tuple[int,int,int], Optional[float]] = {}
     rows = []
-
     skipped = 0
+
     for fx in fixtures:
         league = fx["league"]; uid = fx["uid"]; season_id = fx["season_id"]
         h_fd = fx["home_name_fd"]; a_fd = fx["away_name_fd"]
 
-        home_id = get_team_id_from_map(map_df, league, season_id, h_fd)
-        away_id = get_team_id_from_map(map_df, league, season_id, a_fd)
+        home_id = get_team_id(map_df, league, season_id, h_fd)
+        away_id = get_team_id(map_df, league, season_id, a_fd)
 
         if not home_id or not away_id:
             print(f"[SKIP] Mapping manquant: {league} | {h_fd} vs {a_fd}", file=sys.stderr)
             skipped += 1
             continue
 
+        # Ratings (avec petit cache)
         for key in [(home_id, uid, season_id), (away_id, uid, season_id)]:
             if key not in rating_cache:
                 try:
                     rating_cache[key] = sofascore_avg_rating(*key)
-                    time.sleep(0.2)
+                    time.sleep(0.2)  # limiter un peu le rythme
                 except Exception as e:
                     print(f"[WARN] rating {key} échoue: {e}", file=sys.stderr)
                     rating_cache[key] = None
 
         hr = rating_cache[(home_id, uid, season_id)]
         ar = rating_cache[(away_id, uid, season_id)]
+
         res = apply_rules(hr, ar, rules_df)
         if not res:
             continue
@@ -266,7 +274,7 @@ def main():
             "rating_diff": None if (hr is None or ar is None) else (hr - ar),
         })
 
-    # Sortie (safe même vide)
+    # Sortie CSV (safe même si vide)
     cols = ["date","league","home_team","away_team","prediction","method_rule",
             "rule_roi_percent","rule_success_rate","home_rating","away_rating","rating_diff"]
     out = pd.DataFrame(rows, columns=cols)
