@@ -2,10 +2,15 @@
 # -*- coding: utf-8 -*-
 
 """
-predict.py (saison 2025-2026, mapping statique)
+predict.py (saison 2025-2026, mapping statique robuste)
 - Fixtures: football-data.org (secret FOOTBALL_DATA_TOKEN)
 - Ratings: SofaScore /team/{id}/unique-tournament/{uid}/season/{sid}/statistics/overall
-- Mapping nom -> team_id SofaScore: fichier local (par défaut data/team_map_2025_26.csv)
+- Mapping nom -> team_id SofaScore: CSV local (par défaut data/team_map_2025_26.csv)
+  Colonnes acceptées (au moins celles marquées *):
+    *team_name_fd, *team_id_ss
+     team_name_ss (optionnel)
+     league (nom complet, ex "Bundesliga") OU fd_code (PL/FL1/BL1/SA/PD)
+     season_id (optionnel)
 - Règles ROI: complete_predictive_rules_summary.csv
 - Sortie: CSV avec date, league, home, away, prediction, rule, ROI, success_rate
 """
@@ -15,6 +20,7 @@ import datetime as dt
 import os
 import sys
 import time
+import unicodedata
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -39,7 +45,7 @@ LEAGUES = {
 }
 FD_COMP_LIST = ",".join(LEAGUES.keys())
 
-# ------------ Priorités des règles (doit correspondre au CSV) ------------
+# ------------ Priorité des règles (doit correspondre au CSV) ------------
 RULE_PRIORITY = [
     "weak_vs_strong",
     "away_strong_advantage",
@@ -49,12 +55,34 @@ RULE_PRIORITY = [
     "home_strong_advantage",
 ]
 
+# ------------ Helpers de normalisation ------------
+_STOP_TOKENS = {
+    "fc","cf","ac","as","rc","rcd","sd","ud","cd","ssc","tsg","sv","sc",
+    "club","de","the","and","u.","v.","a.","b.","c.","d.",
+    # années fréquentes / numéros
+    "04","05","06","07","08","09","1899","1901","1903","1907","1909","1910",
+}
+
+def _strip_accents(s: str) -> str:
+    return "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
+
+def _norm(s: str) -> str:
+    s = str(s or "")
+    s = _strip_accents(s.lower())
+    for ch in "-'’.,()&/+":
+        s = s.replace(ch, " ")
+    s = s.replace("saint-germain", "saint germain")  # PSG variantes
+    tokens = [t for t in s.split() if t and t not in _STOP_TOKENS and not t.isdigit()]
+    return " ".join(tokens)
+
+def _eq(a: str, b: str) -> bool:
+    return _norm(a) == _norm(b)
+
 # ------------ Dates ------------
 def next_weekend_dates(today_utc: dt.date) -> List[dt.date]:
     """Vendredi -> Lundi inclus"""
     dow = today_utc.weekday()  # Mon=0..Sun=6
-    days_until_friday = (4 - dow) % 7
-    fri = today_utc + dt.timedelta(days=days_until_friday)
+    fri = today_utc + dt.timedelta(days=(4 - dow) % 7)
     return [fri + dt.timedelta(days=i) for i in range(4)]
 
 # ------------ football-data.org (fixtures) ------------
@@ -66,8 +94,7 @@ def fd_get_matches(api_token: str, date_from: dt.date, date_to: dt.date) -> List
     headers = {"X-Auth-Token": api_token, **HEADERS}
     r = requests.get(url, headers=headers, timeout=TIMEOUT)
     r.raise_for_status()
-    data = r.json()
-    return data.get("matches", [])
+    return r.json().get("matches", [])
 
 def collect_fixtures(api_token: str, dates: List[dt.date]) -> List[dict]:
     start, end = min(dates), max(dates)
@@ -81,10 +108,9 @@ def collect_fixtures(api_token: str, dates: List[dt.date]) -> List[dict]:
             status = m.get("status")
             if status not in ("SCHEDULED", "TIMED", "POSTPONED"):
                 continue
-            utc_date = m["utcDate"][:10]
             fixtures.append(
                 {
-                    "date": utc_date,
+                    "date": m["utcDate"][:10],
                     "fd_code": comp,
                     "league": LEAGUES[comp]["name"],
                     "uid": LEAGUES[comp]["uid"],
@@ -144,36 +170,75 @@ def sofascore_avg_rating(team_id: int, uid: int, season_id: int) -> Optional[flo
 # ------------ Mapping nom -> team_id (CSV local) ------------
 def load_team_map(path: str) -> pd.DataFrame:
     """
-    Colonnes attendues:
-      league,season_id,team_name_fd,team_name_ss,team_id_ss
+    Colonnes possibles (min requis: team_name_fd, team_id_ss):
+      league (nom complet) OU fd_code (PL/FL1/BL1/SA/PD)
+      season_id (optionnel)
+      team_name_fd (nom FD)
+      team_name_ss (optionnel, purement informatif)
+      team_id_ss (numérique)
     """
     if not os.path.exists(path):
         print(f"[WARN] Mapping introuvable: {path}. Aucun match ne sera mappé.", file=sys.stderr)
-        return pd.DataFrame(columns=["league","season_id","team_name_fd","team_name_ss","team_id_ss"])
+        return pd.DataFrame(columns=["fd_code","league","season_id","team_name_fd","team_name_ss","team_id_ss"])
+
     df = pd.read_csv(path, dtype={"team_id_ss": str})
-    # Nettoyage
-    for c in ("league","team_name_fd","team_name_ss"):
+    # Normalisation douce
+    for c in ("league","fd_code","team_name_fd","team_name_ss"):
         if c in df.columns:
             df[c] = df[c].astype(str).str.strip()
     if "season_id" in df.columns:
         df["season_id"] = pd.to_numeric(df["season_id"], errors="coerce").astype("Int64")
     if "team_id_ss" in df.columns:
         df["team_id_ss"] = df["team_id_ss"].str.extract(r"(\d+)")[0]
+
+    # Ajout colonnes de travail
+    if "fd_code" not in df.columns:
+        df["fd_code"] = None
+    if "league" not in df.columns:
+        df["league"] = None
+
+    # Clé normalisée pour accélérer les recherches par nom
+    df["name_key"] = df["team_name_fd"].apply(_norm)
     return df
 
-def get_team_id(map_df: pd.DataFrame, league: str, season_id: int, team_name_fd: str) -> Optional[int]:
+def _match_pool(map_df: pd.DataFrame, fd_code: str, league_name: str, season_id: int) -> pd.DataFrame:
+    pool = map_df.copy()
+    # Filtrage ligue: accepte code OU nom, ou rien (mapping global)
+    pool = pool[
+        (pool["fd_code"].isna() | (pool["fd_code"] == fd_code)) &
+        (pool["league"].isna() | (pool["league"] == league_name))
+    ]
+    # Filtrage saison si présente dans le CSV
+    if "season_id" in pool.columns and pool["season_id"].notna().any():
+        pool = pool[(pool["season_id"].isna()) | (pool["season_id"] == season_id)]
+    return pool
+
+def get_team_id(map_df: pd.DataFrame, fd_code: str, league_name: str, season_id: int, team_name_fd: str) -> Optional[int]:
     if map_df.empty:
         return None
+    pool = _match_pool(map_df, fd_code, league_name, season_id)
+    if pool.empty:
+        return None
+
+    key = _norm(team_name_fd)
+    # 1) match exact normalisé sur team_name_fd
+    row = pool[pool["name_key"] == key].head(1)
+    if row.empty and "team_name_ss" in pool.columns:
+        # 2) match exact normalisé sur team_name_ss
+        pool2 = pool.copy()
+        pool2["name_key_ss"] = pool2["team_name_ss"].apply(_norm)
+        row = pool2[pool2["name_key_ss"] == key].head(1)
+
+    if row.empty:
+        # 3) fallback "commence par" (utile pour longs noms)
+        row = pool[pool["name_key"].str.startswith(key)].head(1)
+    if row.empty:
+        row = pool[pool["name_key"].str.contains(key)].head(1)
+
+    if row.empty:
+        return None
+    tid = row.iloc[0]["team_id_ss"]
     try:
-        pool = map_df[(map_df["league"] == league) & (map_df["season_id"] == season_id)]
-        # priorité: team_name_fd
-        row = pool[pool["team_name_fd"].str.casefold() == str(team_name_fd).casefold()].head(1)
-        if row.empty:
-            # fallback: au cas où le nom FD = nom SS dans le CSV saisi
-            row = pool[pool["team_name_ss"].str.casefold() == str(team_name_fd).casefold()].head(1)
-        if row.empty:
-            return None
-        tid = row.iloc[0]["team_id_ss"]
         return int(tid) if pd.notna(tid) else None
     except Exception:
         return None
@@ -197,7 +262,6 @@ def main():
     fd_token = os.getenv("FOOTBALL_DATA_TOKEN", "").strip()
     if not fd_token:
         print("[ERR] FOOTBALL_DATA_TOKEN manquant (secret repo).", file=sys.stderr)
-        # Sortie vide mais structurée
         empty_cols = ["date","league","home_team","away_team","prediction","method_rule",
                       "rule_roi_percent","rule_success_rate","home_rating","away_rating","rating_diff"]
         pd.DataFrame([], columns=empty_cols).to_csv(args.output, index=False)
@@ -228,23 +292,27 @@ def main():
     skipped = 0
 
     for fx in fixtures:
-        league = fx["league"]; uid = fx["uid"]; season_id = fx["season_id"]
-        h_fd = fx["home_name_fd"]; a_fd = fx["away_name_fd"]
+        league_name = fx["league"]
+        fd_code = fx["fd_code"]
+        uid = fx["uid"]
+        season_id = fx["season_id"]
+        h_fd = fx["home_name_fd"]
+        a_fd = fx["away_name_fd"]
 
-        home_id = get_team_id(map_df, league, season_id, h_fd)
-        away_id = get_team_id(map_df, league, season_id, a_fd)
+        home_id = get_team_id(map_df, fd_code, league_name, season_id, h_fd)
+        away_id = get_team_id(map_df, fd_code, league_name, season_id, a_fd)
 
         if not home_id or not away_id:
-            print(f"[SKIP] Mapping manquant: {league} | {h_fd} vs {a_fd}", file=sys.stderr)
+            print(f"[SKIP] Mapping manquant: {league_name} | {h_fd} vs {a_fd}", file=sys.stderr)
             skipped += 1
             continue
 
-        # Ratings (avec petit cache)
+        # Ratings (avec cache)
         for key in [(home_id, uid, season_id), (away_id, uid, season_id)]:
             if key not in rating_cache:
                 try:
                     rating_cache[key] = sofascore_avg_rating(*key)
-                    time.sleep(0.2)  # limiter un peu le rythme
+                    time.sleep(0.2)  # douceur
                 except Exception as e:
                     print(f"[WARN] rating {key} échoue: {e}", file=sys.stderr)
                     rating_cache[key] = None
@@ -262,7 +330,7 @@ def main():
 
         rows.append({
             "date": fx["date"],
-            "league": league,
+            "league": league_name,
             "home_team": h_fd,
             "away_team": a_fd,
             "prediction": prediction,
